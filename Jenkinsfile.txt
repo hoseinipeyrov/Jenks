@@ -1,0 +1,56 @@
+def PREVIEW_URL
+pipeline {
+    agent {label 'billing-test-node'}
+    environment {
+        CI = 'true'
+    } 
+
+    options {
+        skipStagesAfterUnstable()
+    }
+ 
+    stages {
+	
+        stage('Build') {
+            steps {
+                bat 'dotnet build'
+            } 
+        }
+		
+        stage('Test') {
+            steps {
+                  bat 'dotnet test --no-build --results-directory ./BuildReports/Tests /p:CollectCoverage=true'
+            }
+        }
+		
+        stage('Deploy to Stage') {
+            when { anyOf { branch 'develop' } }
+            steps {
+				script {
+					powershell returnStatus: true, script: './build/deploy.ps1 Staging'
+				}
+            }
+            post   
+                {
+                success {
+                    script{
+                        $comment= "🔴 Parto has been deployed successfully on Stage Server! \n\nResults available at: [$env.JOB_NAME#$env.BUILD_NUMBER](${env.BUILD_URL}/display/redirect)"
+
+                        echo "🔴 Parto has been deployed successfully."
+                        echo $comment
+                    }
+                }
+            }
+        }
+    }
+    
+    post {
+        failure {
+			script{
+			
+				def subject ="[Jenkins] CI Failed #$env.BUILD_NUMBER"
+				emailext body: '''${SCRIPT, template="groovy-html.template"}''', attachLog: true, recipientProviders: [[$class: 'DevelopersRecipientProvider'], [$class: 'RequesterRecipientProvider']], subject: "${subject}", mimeType: 'text/html'
+			}
+		}
+    } 
+} 
